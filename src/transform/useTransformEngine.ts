@@ -165,10 +165,7 @@ export function useTransformEngine({ onBatchTranslate, getBounds, getElement }: 
             const shapeB = shapeCache.get(idB);
             if (!shapeA || !shapeB) continue;
 
-            // Broad phase: AABB check
-            if (!boundingBoxesIntersect(shapeA.bounds, shapeB.bounds)) continue;
-
-            // Narrow phase: polyline collision
+            // Narrow phase: polyline collision (includes its own expanded-AABB broad phase)
             const result = testPolylineCollision(shapeA, shapeB);
             if (!result.colliding) continue;
 
