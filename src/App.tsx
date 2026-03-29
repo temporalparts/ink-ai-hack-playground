@@ -32,8 +32,9 @@ import { useColorConnectGeneration } from './hooks/useColorConnectGeneration';
 import { STYLE_PRESETS, DEFAULT_STYLE_PRESET } from './services/stylePresets';
 import type { StylePresetKey } from './services/stylePresets';
 import { detectRectangleX, lastRectXRejection, type RectangleXResult } from './geometry/rectangleXDetection';
-import { createPaletteIntent } from './palette';
+import { createPaletteIntent, getPaletteEntries } from './palette';
 import type { PaletteIntent, PaletteAction } from './palette';
+import { getElementBounds } from './elements/rendering/ElementRenderer';
 import { Toaster } from './toast/Toast';
 import './App.css';
 
@@ -950,6 +951,21 @@ function App() {
     setDisambiguationIntent(null);
   }, [disambiguationIntent, currentNote, setCurrentNote, startElementAnimation]);
 
+  // Handle double-click on an element: open palette menu to replace it
+  const handleElementDoubleClick = useCallback((element: Element) => {
+    const bounds = getElementBounds(element);
+    if (!bounds) return;
+
+    setPaletteIntent({
+      entries: getPaletteEntries(),
+      rectangleBounds: bounds,
+      anchorPoint: { x: (bounds.left + bounds.right) / 2, y: bounds.top },
+      pendingStrokes: [],
+      createdAt: Date.now(),
+      replacingElementId: element.id,
+    });
+  }, []);
+
   // Handle palette action (user selected an entry or dismissed)
   // Uses currentNoteRef to avoid stale closure when onSelect awaits (e.g. file picker)
   const handlePaletteAction = useCallback(async (
@@ -983,32 +999,47 @@ function App() {
       /* Read latest note AFTER await to avoid stale closure */
       const latestNote = currentNoteRef.current;
 
-      /* Find and remove the temp stroke element that holds the gesture strokes */
-      const gestureStrokeSet = new Set(paletteIntent.pendingStrokes);
-      const consumedIdSet = new Set(consumedElementIds);
-      const remainingElements = latestNote.elements.filter(el => {
-        // Remove elements explicitly consumed by onSelect
-        if (consumedIdSet.has(el.id)) return false;
-        if (el.type !== 'stroke') return true;
-        return !el.strokes.some(s => gestureStrokeSet.has(s));
-      });
+      if (paletteIntent.replacingElementId) {
+        /* Double-click replacement: remove the original element and add the new one */
+        const replacingId = paletteIntent.replacingElementId;
+        const remainingElements = latestNote.elements.filter(el => el.id !== replacingId);
 
-      if (newElement && consumed) {
-        logElementCreated(newElement.type, newElement.id, `palette: ${entry.label}`);
-        startElementAnimation([newElement.id]);
-        setCurrentNote({
-          ...latestNote,
-          elements: [...remainingElements, newElement],
+        if (newElement) {
+          logElementCreated(newElement.type, newElement.id, `palette replace: ${entry.label}`);
+          startElementAnimation([newElement.id]);
+          setCurrentNote({
+            ...latestNote,
+            elements: [...remainingElements, newElement],
+          });
+        }
+      } else {
+        /* Gesture-based palette: find and remove the temp stroke element */
+        const gestureStrokeSet = new Set(paletteIntent.pendingStrokes);
+        const consumedIdSet = new Set(consumedElementIds);
+        const remainingElements = latestNote.elements.filter(el => {
+          // Remove elements explicitly consumed by onSelect
+          if (consumedIdSet.has(el.id)) return false;
+          if (el.type !== 'stroke') return true;
+          return !el.strokes.some(s => gestureStrokeSet.has(s));
         });
-      } else if (consumed) {
-        /* onSelect consumed strokes but returned null — remove gesture strokes */
-        debugLog.warn('Palette: entry consumed strokes but returned no element');
-        setCurrentNote({
-          ...latestNote,
-          elements: remainingElements,
-        });
+
+        if (newElement && consumed) {
+          logElementCreated(newElement.type, newElement.id, `palette: ${entry.label}`);
+          startElementAnimation([newElement.id]);
+          setCurrentNote({
+            ...latestNote,
+            elements: [...remainingElements, newElement],
+          });
+        } else if (consumed) {
+          /* onSelect consumed strokes but returned null — remove gesture strokes */
+          debugLog.warn('Palette: entry consumed strokes but returned no element');
+          setCurrentNote({
+            ...latestNote,
+            elements: remainingElements,
+          });
+        }
+        /* If !consumed: strokes remain as a StrokeElement already in the note */
       }
-      /* If !consumed: strokes remain as a StrokeElement already in the note */
     } else {
       debugLog.info('Palette: dismissed, keeping strokes');
     }
@@ -1043,6 +1074,7 @@ function App() {
           paletteIntent={paletteIntent}
           onPaletteAction={handlePaletteAction}
           strokesToClearFromOverlay={strokesToClearFromOverlay}
+          onElementDoubleClick={handleElementDoubleClick}
         />
       </div>
 

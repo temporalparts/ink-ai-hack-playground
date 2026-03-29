@@ -64,6 +64,8 @@ export interface InkCanvasProps {
   onPaletteAction?: (action: PaletteAction, entryId?: string) => void;
   // Overlay stroke clearing - used for scribble erase to sync stroke removal with element removal
   strokesToClearFromOverlay?: { strokes: Stroke[]; requestId: number } | null;
+  // Double-click on element to open palette for replacement
+  onElementDoubleClick?: (element: Element) => void;
 }
 
 export function InkCanvas({
@@ -90,6 +92,7 @@ export function InkCanvas({
   paletteIntent,
   onPaletteAction,
   strokesToClearFromOverlay,
+  onElementDoubleClick,
 }: InkCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1212,17 +1215,28 @@ export function InkCanvas({
     }
   }, [isPanning, isHandleDragging, activeHandle, isDragging, isDrawing, isErasing, isSelectingMarquee, onStrokeComplete, renderOverlay, noteElements.elements, onElementsChange, getElementsInRect, getAllElementsAtPoint, selectedElementIds, onSelectionChange, viewport]);
 
-  // Handle double-click to fit content (only in select/pan modes to avoid
-  // accidental zoom during gameplay or rapid inking)
-  const handleDoubleClick = useCallback(() => {
+  // Handle double-click: on element → open palette to replace; on empty space → fit content
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     if (currentTool !== 'select' && currentTool !== 'pan') return;
+
+    const canvasPoint = screenToCanvas(viewport, {
+      x: e.nativeEvent.offsetX,
+      y: e.nativeEvent.offsetY,
+    });
+    const clickedElement = getElementAtPoint(canvasPoint.x, canvasPoint.y);
+
+    if (clickedElement && onElementDoubleClick) {
+      onElementDoubleClick(clickedElement);
+      return;
+    }
+
     const bounds = getAllContentBounds(noteElements.elements);
     if (bounds) {
       const newViewport = fitToContent(viewport, bounds, canvasSize.width, canvasSize.height);
       setViewport(newViewport);
       onViewportChange?.(newViewport);
     }
-  }, [currentTool, noteElements.elements, viewport, canvasSize.width, canvasSize.height, onViewportChange]);
+  }, [currentTool, viewport, getElementAtPoint, onElementDoubleClick, noteElements.elements, canvasSize.width, canvasSize.height, onViewportChange]);
 
   // Prevent context menu on right-click (we use it for panning)
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
