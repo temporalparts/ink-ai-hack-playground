@@ -51,6 +51,9 @@ export interface ArrowProperties {
 
   /** Raw pixel length from tail to head. */
   length: number;
+
+  /** Unit vector in the arrow's direction. x = cos(angle), y = sin(angle). */
+  vector: { x: number; y: number };
 }
 
 /**
@@ -82,7 +85,13 @@ export function getArrowProperties(
   // Normalize length to [0, 1]
   const speed = Math.max(0, Math.min(1, (length - MIN_LENGTH) / (MAX_LENGTH - MIN_LENGTH)));
 
-  return { angleRadians, angleDegrees, direction, sectorIndex, speed, length };
+  // Unit vector in the arrow's direction
+  const vector = {
+    x: Math.cos(angleRadians),
+    y: Math.sin(angleRadians),
+  };
+
+  return { angleRadians, angleDegrees, direction, sectorIndex, speed, length, vector };
 }
 
 /**
