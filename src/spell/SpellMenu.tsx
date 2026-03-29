@@ -128,9 +128,32 @@ export function SpellMenu({
             width: '100%',
             textAlign: 'center',
             backgroundColor: '#f8f8f8',
+            position: 'relative',
           }}
         >
           Cast spell...
+          <button
+            onClick={handleDismiss}
+            style={{
+              position: 'absolute',
+              right: '4px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              color: '#999',
+              fontSize: '14px',
+              lineHeight: 1,
+              padding: '2px 4px',
+              borderRadius: '3px',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#333'; e.currentTarget.style.backgroundColor = '#e8e8e8'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#999'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+            title="Dismiss"
+          >
+            &times;
+          </button>
         </div>
 
         {/* Body: entry buttons on left, text input on right */}
@@ -266,21 +289,6 @@ export function SpellMenu({
               }}
             />
             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={handleDismiss}
-                style={{
-                  padding: '4px 10px',
-                  fontSize: '11px',
-                  border: '1px solid #d0d0d0',
-                  borderRadius: '4px',
-                  background: 'none',
-                  cursor: 'pointer',
-                  color: '#666',
-                }}
-              >
-                Cancel
-              </button>
               <button
                 type="submit"
                 disabled={!text.trim()}
