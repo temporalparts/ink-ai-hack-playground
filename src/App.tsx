@@ -110,7 +110,7 @@ function App() {
   currentNoteRef.current = currentNote;
 
   // Physics-based transform engine for continuous element movement
-  const { addVelocity, setMass, setPinned, isPinned, setCollidable, isCollidable, getPhysicsProperties, rewind: rewindPhysics } = useTransformEngine({
+  const { addVelocity, setMass, setPinned, isPinned, setCollidable, isCollidable, getPhysicsProperties, loadProperties, serializeProperties, rewind: rewindPhysics } = useTransformEngine({
     onBatchTranslate: useCallback((displacements: Map<string, Vector2>) => {
       const note = currentNoteRef.current;
       setCurrentNote({
@@ -121,7 +121,19 @@ function App() {
         }),
       });
     }, [setCurrentNote]),
+    getBounds: useCallback((elementId: string) => {
+      const el = currentNoteRef.current.elements.find(e => e.id === elementId);
+      return el ? getElementBounds(el) : null;
+    }, []),
   });
+
+  // Load saved physics properties on mount
+  useEffect(() => {
+    const saved = currentNoteRef.current.physicsProperties;
+    if (saved) {
+      loadProperties(saved);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track pending strokes for element creation (strokes not yet assigned to elements)
   const pendingStrokesRef = useRef<Stroke[]>([]);
@@ -380,7 +392,11 @@ function App() {
     }
     autoSaveTimeoutRef.current = setTimeout(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(currentNote));
+        const noteToSave = {
+          ...currentNote,
+          physicsProperties: serializeProperties(),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(noteToSave));
         if (viewportRef.current) {
           localStorage.setItem(VIEWPORT_STORAGE_KEY, JSON.stringify(viewportRef.current));
         }
@@ -391,7 +407,7 @@ function App() {
     return () => {
       if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
     };
-  }, [currentNote]);
+  }, [currentNote, serializeProperties]);
 
   // Handle new note
   const handleNewNote = useCallback(() => {

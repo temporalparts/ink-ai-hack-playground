@@ -315,9 +315,9 @@ export function SpellMenu({
                     whiteSpace: 'nowrap',
                     transition: 'all 0.15s',
                   }}
-                  title={physicsState.pinned ? 'Unpin (allow forces)' : 'Pin (infinite mass, immune to forces)'}
+                  title={physicsState.pinned ? 'Set mass back to finite' : 'Set mass to infinite (immune to forces)'}
                 >
-                  {physicsState.pinned ? 'Pinned \u221E' : 'Pin'}
+                  {physicsState.pinned ? '\u221E mass' : '\u221E'}
                 </button>
                 <button
                   onClick={(e) => {

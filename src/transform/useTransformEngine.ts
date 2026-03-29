@@ -13,6 +13,7 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
 import type { Vector2 } from './TransformOperation';
 import { vec2Add, vec2Scale, ZERO_VECTOR } from './TransformOperation';
+import type { BoundingBox } from '../types/primitives';
 
 interface PhysicsBody {
   velocity: Vector2;
@@ -32,6 +33,8 @@ export interface PhysicsProperties {
 interface UseTransformEngineOptions {
   /** Called once per frame with all element displacements batched together. */
   onBatchTranslate: (displacements: Map<string, Vector2>) => void;
+  /** Returns current bounding box for an element. Needed for collision detection. */
+  getBounds?: (elementId: string) => BoundingBox | null;
 }
 
 export const DEFAULT_MASS = 1;
@@ -42,7 +45,7 @@ const DEFAULT_PROPERTIES: PhysicsProperties = {
   collidable: false,
 };
 
-export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptions) {
+export function useTransformEngine({ onBatchTranslate, getBounds }: UseTransformEngineOptions) {
   const bodiesRef = useRef<Map<string, PhysicsBody>>(new Map());
   /** Per-element physics properties — persist across rewind. */
   const propsRef = useRef<Map<string, PhysicsProperties>>(new Map());
@@ -52,10 +55,15 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
   const rafIdRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const onBatchTranslateRef = useRef(onBatchTranslate);
+  const getBoundsRef = useRef(getBounds);
 
   useEffect(() => {
     onBatchTranslateRef.current = onBatchTranslate;
   }, [onBatchTranslate]);
+
+  useEffect(() => {
+    getBoundsRef.current = getBounds;
+  }, [getBounds]);
 
   const getProps = (elementId: string): PhysicsProperties => {
     return propsRef.current.get(elementId) ?? DEFAULT_PROPERTIES;
@@ -93,6 +101,127 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
 
       if (batch.size > 0) {
         onBatchTranslateRef.current(batch);
+      }
+
+      // --- AABB collision detection between collidable bodies ---
+      if (getBoundsRef.current) {
+        const collidableIds: string[] = [];
+        for (const [elementId] of bodies) {
+          if (getProps(elementId).collidable) {
+            collidableIds.push(elementId);
+          }
+        }
+
+        for (let i = 0; i < collidableIds.length; i++) {
+          for (let j = i + 1; j < collidableIds.length; j++) {
+            const idA = collidableIds[i];
+            const idB = collidableIds[j];
+            const boundsA = getBoundsRef.current(idA);
+            const boundsB = getBoundsRef.current(idB);
+            if (!boundsA || !boundsB) continue;
+
+            // Check AABB overlap
+            if (boundsA.right < boundsB.left || boundsB.right < boundsA.left ||
+                boundsA.bottom < boundsB.top || boundsB.bottom < boundsA.top) {
+              continue; // No overlap
+            }
+
+            // Compute overlap on each axis
+            const overlapX = Math.min(boundsA.right - boundsB.left, boundsB.right - boundsA.left);
+            const overlapY = Math.min(boundsA.bottom - boundsB.top, boundsB.bottom - boundsA.top);
+
+            const bodyA = bodies.get(idA)!;
+            const bodyB = bodies.get(idB)!;
+            const propsA = getProps(idA);
+            const propsB = getProps(idB);
+            const massA = propsA.pinned ? Infinity : propsA.mass;
+            const massB = propsB.pinned ? Infinity : propsB.mass;
+
+            // Resolve along the axis of least penetration
+            if (overlapX < overlapY) {
+              // Separate along X
+              const centerAx = (boundsA.left + boundsA.right) / 2;
+              const centerBx = (boundsB.left + boundsB.right) / 2;
+              const sign = centerAx < centerBx ? -1 : 1;
+
+              if (massA === Infinity && massB === Infinity) {
+                // Both infinite — split equally
+                const sep: Vector2 = { x: sign * overlapX / 2, y: 0 };
+                bodyA.totalDisplacement = vec2Add(bodyA.totalDisplacement, sep);
+                bodyB.totalDisplacement = vec2Add(bodyB.totalDisplacement, { x: -sep.x, y: 0 });
+                onBatchTranslateRef.current(new Map([[idA, sep], [idB, { x: -sep.x, y: 0 }]]));
+              } else if (massA === Infinity) {
+                const sep: Vector2 = { x: -sign * overlapX, y: 0 };
+                bodyB.totalDisplacement = vec2Add(bodyB.totalDisplacement, sep);
+                onBatchTranslateRef.current(new Map([[idB, sep]]));
+              } else if (massB === Infinity) {
+                const sep: Vector2 = { x: sign * overlapX, y: 0 };
+                bodyA.totalDisplacement = vec2Add(bodyA.totalDisplacement, sep);
+                onBatchTranslateRef.current(new Map([[idA, sep]]));
+              } else {
+                const totalMass = massA + massB;
+                const sepA: Vector2 = { x: sign * overlapX * (massB / totalMass), y: 0 };
+                const sepB: Vector2 = { x: -sign * overlapX * (massA / totalMass), y: 0 };
+                bodyA.totalDisplacement = vec2Add(bodyA.totalDisplacement, sepA);
+                bodyB.totalDisplacement = vec2Add(bodyB.totalDisplacement, sepB);
+                onBatchTranslateRef.current(new Map([[idA, sepA], [idB, sepB]]));
+              }
+
+              // Swap X velocities (1D elastic collision)
+              if (massA === Infinity) {
+                bodyB.velocity = { x: -bodyB.velocity.x, y: bodyB.velocity.y };
+              } else if (massB === Infinity) {
+                bodyA.velocity = { x: -bodyA.velocity.x, y: bodyA.velocity.y };
+              } else {
+                const totalMass = massA + massB;
+                const newVxA = ((massA - massB) / totalMass) * bodyA.velocity.x + (2 * massB / totalMass) * bodyB.velocity.x;
+                const newVxB = (2 * massA / totalMass) * bodyA.velocity.x + ((massB - massA) / totalMass) * bodyB.velocity.x;
+                bodyA.velocity = { x: newVxA, y: bodyA.velocity.y };
+                bodyB.velocity = { x: newVxB, y: bodyB.velocity.y };
+              }
+            } else {
+              // Separate along Y
+              const centerAy = (boundsA.top + boundsA.bottom) / 2;
+              const centerBy = (boundsB.top + boundsB.bottom) / 2;
+              const sign = centerAy < centerBy ? -1 : 1;
+
+              if (massA === Infinity && massB === Infinity) {
+                const sep: Vector2 = { x: 0, y: sign * overlapY / 2 };
+                bodyA.totalDisplacement = vec2Add(bodyA.totalDisplacement, sep);
+                bodyB.totalDisplacement = vec2Add(bodyB.totalDisplacement, { x: 0, y: -sep.y });
+                onBatchTranslateRef.current(new Map([[idA, sep], [idB, { x: 0, y: -sep.y }]]));
+              } else if (massA === Infinity) {
+                const sep: Vector2 = { x: 0, y: -sign * overlapY };
+                bodyB.totalDisplacement = vec2Add(bodyB.totalDisplacement, sep);
+                onBatchTranslateRef.current(new Map([[idB, sep]]));
+              } else if (massB === Infinity) {
+                const sep: Vector2 = { x: 0, y: sign * overlapY };
+                bodyA.totalDisplacement = vec2Add(bodyA.totalDisplacement, sep);
+                onBatchTranslateRef.current(new Map([[idA, sep]]));
+              } else {
+                const totalMass = massA + massB;
+                const sepA: Vector2 = { x: 0, y: sign * overlapY * (massB / totalMass) };
+                const sepB: Vector2 = { x: 0, y: -sign * overlapY * (massA / totalMass) };
+                bodyA.totalDisplacement = vec2Add(bodyA.totalDisplacement, sepA);
+                bodyB.totalDisplacement = vec2Add(bodyB.totalDisplacement, sepB);
+                onBatchTranslateRef.current(new Map([[idA, sepA], [idB, sepB]]));
+              }
+
+              // Swap Y velocities (1D elastic collision)
+              if (massA === Infinity) {
+                bodyB.velocity = { x: bodyB.velocity.x, y: -bodyB.velocity.y };
+              } else if (massB === Infinity) {
+                bodyA.velocity = { x: bodyA.velocity.x, y: -bodyA.velocity.y };
+              } else {
+                const totalMass = massA + massB;
+                const newVyA = ((massA - massB) / totalMass) * bodyA.velocity.y + (2 * massB / totalMass) * bodyB.velocity.y;
+                const newVyB = (2 * massA / totalMass) * bodyA.velocity.y + ((massB - massA) / totalMass) * bodyB.velocity.y;
+                bodyA.velocity = { x: bodyA.velocity.x, y: newVyA };
+                bodyB.velocity = { x: bodyB.velocity.x, y: newVyB };
+              }
+            }
+          }
+        }
       }
 
       if (bodies.size > 0) {
@@ -236,6 +365,38 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
     return bodiesRef.current.size > 0;
   }, []);
 
+  /**
+   * Load physics properties from a serialized record (e.g. from saved note).
+   * Merges with existing properties.
+   */
+  const loadProperties = useCallback((record: Record<string, { mass?: number; pinned?: boolean; collidable?: boolean }>) => {
+    for (const [elementId, stored] of Object.entries(record)) {
+      const p = ensureProps(elementId);
+      if (stored.mass !== undefined) p.mass = stored.mass;
+      if (stored.pinned !== undefined) p.pinned = stored.pinned;
+      if (stored.collidable !== undefined) p.collidable = stored.collidable;
+    }
+    bumpVersion();
+  }, []);
+
+  /**
+   * Serialize all non-default physics properties to a plain record
+   * suitable for JSON storage.
+   */
+  const serializeProperties = useCallback((): Record<string, { mass?: number; pinned?: boolean; collidable?: boolean }> => {
+    const result: Record<string, { mass?: number; pinned?: boolean; collidable?: boolean }> = {};
+    for (const [elementId, p] of propsRef.current) {
+      const stored: { mass?: number; pinned?: boolean; collidable?: boolean } = {};
+      if (p.mass !== DEFAULT_MASS) stored.mass = p.mass;
+      if (p.pinned) stored.pinned = true;
+      if (p.collidable) stored.collidable = true;
+      if (Object.keys(stored).length > 0) {
+        result[elementId] = stored;
+      }
+    }
+    return result;
+  }, []);
+
   return {
     applyForce, addVelocity,
     setMass, getMass,
@@ -244,5 +405,6 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
     getPhysicsProperties,
     stopElement, stopAll, rewind,
     getVelocity, hasActiveBodies,
+    loadProperties, serializeProperties,
   };
 }
