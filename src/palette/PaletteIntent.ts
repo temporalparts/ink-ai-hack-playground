@@ -14,8 +14,6 @@ export interface PaletteIntent {
   anchorPoint: Offset;
   pendingStrokes: Stroke[];
   createdAt: number;
-  /** When set, the palette was triggered by double-clicking an existing element to replace it */
-  replacingElementId?: string;
 }
 
 export type PaletteAction = 'select' | 'dismiss';

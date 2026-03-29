@@ -26,6 +26,8 @@ import { DisambiguationMenu } from '../disambiguation';
 import type { DisambiguationIntent, DisambiguationAction, DisambiguationCandidate } from '../disambiguation';
 import { PaletteMenu } from '../palette';
 import type { PaletteIntent, PaletteAction } from '../palette';
+import { SpellMenu } from '../spell';
+import type { SpellIntent, SpellAction } from '../spell';
 
 export type Tool = 'pen' | 'eraser' | 'pan' | 'select';
 
@@ -64,7 +66,9 @@ export interface InkCanvasProps {
   onPaletteAction?: (action: PaletteAction, entryId?: string) => void;
   // Overlay stroke clearing - used for scribble erase to sync stroke removal with element removal
   strokesToClearFromOverlay?: { strokes: Stroke[]; requestId: number } | null;
-  // Double-click on element to open palette for replacement
+  // Spell props (double-click element replacement)
+  spellIntent?: SpellIntent | null;
+  onSpellAction?: (action: SpellAction, value?: string) => void;
   onElementDoubleClick?: (element: Element) => void;
 }
 
@@ -92,6 +96,8 @@ export function InkCanvas({
   paletteIntent,
   onPaletteAction,
   strokesToClearFromOverlay,
+  spellIntent,
+  onSpellAction,
   onElementDoubleClick,
 }: InkCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1389,6 +1395,12 @@ export function InkCanvas({
       <PaletteMenu
         intent={paletteIntent ?? null}
         onAction={onPaletteAction ?? (() => {})}
+        canvasToScreen={canvasToScreenWrapper}
+      />
+      {/* Spell menu (double-click element replacement) */}
+      <SpellMenu
+        intent={spellIntent ?? null}
+        onAction={onSpellAction ?? (() => {})}
         canvasToScreen={canvasToScreenWrapper}
       />
       {/* InkText content overlays in debug mode */}
