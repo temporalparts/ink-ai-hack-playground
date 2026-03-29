@@ -38,6 +38,7 @@ import { createSpellIntent } from './spell';
 import type { SpellIntent, SpellAction } from './spell';
 import { getElementBounds } from './elements/rendering/ElementRenderer';
 import { Toaster } from './toast/Toast';
+import { useTransformEngine, translateElement } from './transform';
 import './App.css';
 
 
@@ -106,6 +107,20 @@ function App() {
   // Ref to always access the latest note state from async callbacks (avoids stale closures)
   const currentNoteRef = useRef(currentNote);
   currentNoteRef.current = currentNote;
+
+  // Transform engine for animated element manipulation (movement, rotation, etc.)
+  const { submitOperation } = useTransformEngine({
+    onUpdate: useCallback((elementIds: string[], _type: string, dx: number, dy: number) => {
+      const note = currentNoteRef.current;
+      const idSet = new Set(elementIds);
+      setCurrentNote({
+        ...note,
+        elements: note.elements.map(el =>
+          idSet.has(el.id) ? translateElement(el, dx, dy) : el
+        ),
+      });
+    }, [setCurrentNote]),
+  });
 
   // Track pending strokes for element creation (strokes not yet assigned to elements)
   const pendingStrokesRef = useRef<Stroke[]>([]);
@@ -979,6 +994,13 @@ function App() {
 
       debugLog.info('Spell: selected entry', { entryId: value, label: entry.label });
 
+      // Transform entries (e.g. movement) — apply transform and keep menu open
+      if (entry.transformFactory) {
+        const op = entry.transformFactory(spellIntent.replacingElementId);
+        submitOperation(op);
+        return; // Don't dismiss spell menu
+      }
+
       const consumeStrokes = () => { /* no-op for spell replacement */ };
 
       const newElement = await entry.onSelect(
@@ -1008,7 +1030,7 @@ function App() {
     }
 
     setSpellIntent(null);
-  }, [spellIntent, setCurrentNote, startElementAnimation]);
+  }, [spellIntent, setCurrentNote, startElementAnimation, submitOperation]);
 
   // Handle palette action (user selected an entry or dismissed)
   // Uses currentNoteRef to avoid stale closure when onSelect awaits (e.g. file picker)
