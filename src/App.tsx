@@ -110,7 +110,7 @@ function App() {
   currentNoteRef.current = currentNote;
 
   // Physics-based transform engine for continuous element movement
-  const { applyForce, setMass, setPinned, isPinned, setCollidable, isCollidable, getPhysicsProperties, rewind: rewindPhysics } = useTransformEngine({
+  const { addVelocity, setMass, setPinned, isPinned, setCollidable, isCollidable, getPhysicsProperties, rewind: rewindPhysics } = useTransformEngine({
     onBatchTranslate: useCallback((displacements: Map<string, Vector2>) => {
       const note = currentNoteRef.current;
       setCurrentNote({
@@ -999,9 +999,9 @@ function App() {
 
       debugLog.info('Spell: selected entry', { entryId: value, label: entry.label });
 
-      // Force entries (e.g. movement) — apply force as impulse and keep menu open
-      if (entry.force) {
-        applyForce(spellIntent.replacingElementId, entry.force);
+      // Velocity entries (e.g. movement) — add velocity directly, bypassing mass
+      if (entry.velocity) {
+        addVelocity(spellIntent.replacingElementId, entry.velocity);
         return; // Don't dismiss spell menu
       }
 
@@ -1034,7 +1034,7 @@ function App() {
     }
 
     setSpellIntent(null);
-  }, [spellIntent, setCurrentNote, startElementAnimation, applyForce]);
+  }, [spellIntent, setCurrentNote, startElementAnimation, addVelocity]);
 
   // Physics state for the spell menu target element
   const spellPhysicsState = useMemo(() => {

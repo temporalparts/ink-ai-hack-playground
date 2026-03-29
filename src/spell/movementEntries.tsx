@@ -41,11 +41,11 @@ function ArrowRight() {
 
 export const movementEntries: SpellEntry[] = [
   { id: 'move-up', label: 'Up', Icon: ArrowUp, category: 'movement',
-    force: { x: 0, y: -MOVE_FORCE } },
+    velocity: { x: 0, y: -MOVE_SPEED } },
   { id: 'move-down', label: 'Down', Icon: ArrowDown, category: 'movement',
-    force: { x: 0, y: MOVE_FORCE } },
+    velocity: { x: 0, y: MOVE_SPEED } },
   { id: 'move-left', label: 'Left', Icon: ArrowLeft, category: 'movement',
-    force: { x: -MOVE_FORCE, y: 0 } },
+    velocity: { x: -MOVE_SPEED, y: 0 } },
   { id: 'move-right', label: 'Right', Icon: ArrowRight, category: 'movement',
-    force: { x: MOVE_FORCE, y: 0 } },
+    velocity: { x: MOVE_SPEED, y: 0 } },
 ];

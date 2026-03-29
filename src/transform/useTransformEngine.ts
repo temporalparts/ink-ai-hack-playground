@@ -130,6 +130,25 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
     scheduleLoop();
   }, [scheduleLoop]);
 
+  /**
+   * Add velocity directly, bypassing mass. Works on any element
+   * regardless of mass or pinned state.
+   */
+  const addVelocity = useCallback((elementId: string, dv: Vector2) => {
+    const bodies = bodiesRef.current;
+    const body = bodies.get(elementId);
+
+    if (body) {
+      body.velocity = vec2Add(body.velocity, dv);
+    } else {
+      bodies.set(elementId, {
+        velocity: { ...dv },
+        totalDisplacement: { ...ZERO_VECTOR },
+      });
+    }
+    scheduleLoop();
+  }, [scheduleLoop]);
+
   /** Set mass for an element. Persists across rewind. */
   const setMass = useCallback((elementId: string, mass: number) => {
     if (mass <= 0) return;
@@ -218,7 +237,7 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
   }, []);
 
   return {
-    applyForce,
+    applyForce, addVelocity,
     setMass, getMass,
     setPinned, isPinned,
     setCollidable, isCollidable,
