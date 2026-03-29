@@ -110,7 +110,7 @@ function App() {
   currentNoteRef.current = currentNote;
 
   // Physics-based transform engine for continuous element movement
-  const { applyForce, rewind: rewindPhysics } = useTransformEngine({
+  const { applyForce, setMass, setPinned, isPinned, setCollidable, isCollidable, getPhysicsProperties, rewind: rewindPhysics } = useTransformEngine({
     onBatchTranslate: useCallback((displacements: Map<string, Vector2>) => {
       const note = currentNoteRef.current;
       setCurrentNote({
@@ -175,7 +175,11 @@ function App() {
   // Handle selection change from InkCanvas
   const handleSelectionChange = useCallback((newSelection: Set<string>) => {
     setSelectedElementIds(newSelection);
-  }, []);
+    // Dismiss spell menu if the target element is no longer selected
+    if (spellIntent && !newSelection.has(spellIntent.replacingElementId)) {
+      setSpellIntent(null);
+    }
+  }, [spellIntent]);
 
   // Handle moving selected elements
   const handleElementsMove = useCallback((elementIds: Set<string>, dx: number, dy: number) => {
@@ -1032,6 +1036,33 @@ function App() {
     setSpellIntent(null);
   }, [spellIntent, setCurrentNote, startElementAnimation, applyForce]);
 
+  // Physics state for the spell menu target element
+  const spellPhysicsState = useMemo(() => {
+    if (!spellIntent) return undefined;
+    const props = getPhysicsProperties(spellIntent.replacingElementId);
+    return { mass: props.mass, pinned: props.pinned, collidable: props.collidable };
+  }, [spellIntent, getPhysicsProperties]);
+
+  const handleSpellSetMass = useCallback((mass: number) => {
+    if (!spellIntent) return;
+    setMass(spellIntent.replacingElementId, mass);
+    debugLog.info('Spell: set mass', { elementId: spellIntent.replacingElementId, mass });
+  }, [spellIntent, setMass]);
+
+  const handleSpellTogglePinned = useCallback(() => {
+    if (!spellIntent) return;
+    const current = isPinned(spellIntent.replacingElementId);
+    setPinned(spellIntent.replacingElementId, !current);
+    debugLog.info('Spell: toggle pinned', { elementId: spellIntent.replacingElementId, pinned: !current });
+  }, [spellIntent, isPinned, setPinned]);
+
+  const handleSpellToggleCollidable = useCallback(() => {
+    if (!spellIntent) return;
+    const current = isCollidable(spellIntent.replacingElementId);
+    setCollidable(spellIntent.replacingElementId, !current);
+    debugLog.info('Spell: toggle collidable', { elementId: spellIntent.replacingElementId, collidable: !current });
+  }, [spellIntent, isCollidable, setCollidable]);
+
   // Handle palette action (user selected an entry or dismissed)
   // Uses currentNoteRef to avoid stale closure when onSelect awaits (e.g. file picker)
   const handlePaletteAction = useCallback(async (
@@ -1127,6 +1158,10 @@ function App() {
           strokesToClearFromOverlay={strokesToClearFromOverlay}
           spellIntent={spellIntent}
           onSpellAction={handleSpellAction}
+          spellPhysicsState={spellPhysicsState}
+          onSpellSetMass={handleSpellSetMass}
+          onSpellTogglePinned={handleSpellTogglePinned}
+          onSpellToggleCollidable={handleSpellToggleCollidable}
           onElementDoubleClick={handleElementDoubleClick}
         />
       </div>

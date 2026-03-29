@@ -27,7 +27,7 @@ import type { DisambiguationIntent, DisambiguationAction, DisambiguationCandidat
 import { PaletteMenu } from '../palette';
 import type { PaletteIntent, PaletteAction } from '../palette';
 import { SpellMenu } from '../spell';
-import type { SpellIntent, SpellAction } from '../spell';
+import type { SpellIntent, SpellAction, SpellMenuPhysicsState } from '../spell';
 
 export type Tool = 'pen' | 'eraser' | 'pan' | 'select';
 
@@ -69,6 +69,10 @@ export interface InkCanvasProps {
   // Spell props (double-click element replacement)
   spellIntent?: SpellIntent | null;
   onSpellAction?: (action: SpellAction, value?: string) => void;
+  spellPhysicsState?: SpellMenuPhysicsState;
+  onSpellSetMass?: (mass: number) => void;
+  onSpellTogglePinned?: () => void;
+  onSpellToggleCollidable?: () => void;
   onElementDoubleClick?: (element: Element) => void;
 }
 
@@ -98,6 +102,10 @@ export function InkCanvas({
   strokesToClearFromOverlay,
   spellIntent,
   onSpellAction,
+  spellPhysicsState,
+  onSpellSetMass,
+  onSpellTogglePinned,
+  onSpellToggleCollidable,
   onElementDoubleClick,
 }: InkCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1402,6 +1410,10 @@ export function InkCanvas({
         intent={spellIntent ?? null}
         onAction={onSpellAction ?? (() => {})}
         canvasToScreen={canvasToScreenWrapper}
+        physicsState={spellPhysicsState}
+        onSetMass={onSpellSetMass}
+        onTogglePinned={onSpellTogglePinned}
+        onToggleCollidable={onSpellToggleCollidable}
       />
       {/* InkText content overlays in debug mode */}
       {showDebugOverlay && inkTextOverlays.map((overlay) => (

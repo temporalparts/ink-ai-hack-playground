@@ -8,10 +8,21 @@ import type { SpellIntent, SpellAction } from './SpellIntent';
 import type { Offset } from '../types';
 import { computeSpellGridLayout } from './spellGridLayout';
 
+export interface SpellMenuPhysicsState {
+  mass: number;
+  pinned: boolean;
+  collidable: boolean;
+}
+
 export interface SpellMenuProps {
   intent: SpellIntent | null;
   onAction: (action: SpellAction, value?: string) => void;
   canvasToScreen: (point: Offset) => Offset;
+  /** Current physics properties for the target element. */
+  physicsState?: SpellMenuPhysicsState;
+  onSetMass?: (mass: number) => void;
+  onTogglePinned?: () => void;
+  onToggleCollidable?: () => void;
 }
 
 const MENU_OFFSET_Y = -60;
@@ -20,20 +31,26 @@ export function SpellMenu({
   intent,
   onAction,
   canvasToScreen,
+  physicsState,
+  onSetMass,
+  onTogglePinned,
+  onToggleCollidable,
 }: SpellMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState('');
+  const [massInput, setMassInput] = useState('');
 
-  // Reset text when intent changes
+  // Reset text and sync mass when intent changes
   useEffect(() => {
     if (intent) {
       setText('');
+      setMassInput(physicsState?.pinned ? '∞' : String(physicsState?.mass ?? 1));
       requestAnimationFrame(() => {
         inputRef.current?.focus();
       });
     }
-  }, [intent]);
+  }, [intent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!intent) return;
@@ -158,79 +175,173 @@ export function SpellMenu({
 
         {/* Body: entry buttons on left, text input on right */}
         <div style={{ display: 'flex', alignItems: 'stretch' }}>
-          {/* Entry buttons grid */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: layout.gridTemplateColumns,
-            gridTemplateRows: 'auto auto',
-          }}>
-            {/* Row 1: category labels spanning their groups */}
-            {layout.groupSpans.map((span, gi) => (
-              <div
-                key={span.category}
-                style={{
-                  gridRow: 1,
-                  gridColumn: `${span.start} / ${span.end}`,
-                  fontSize: '9px',
-                  color: '#999',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  textAlign: 'center',
-                  padding: '3px 4px',
-                  lineHeight: 1,
-                  borderBottom: '1px solid #e0e0e0',
-                  ...(gi > 0 ? { borderLeft: '1px solid #d0d0d0' } : {}),
-                }}
-              >
-                {span.label}
-              </div>
-            ))}
+          {/* Left column: button grid + physics properties */}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {/* Entry buttons grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: layout.gridTemplateColumns,
+              gridTemplateRows: 'auto auto',
+            }}>
+              {/* Row 1: category labels spanning their groups */}
+              {layout.groupSpans.map((span, gi) => (
+                <div
+                  key={span.category}
+                  style={{
+                    gridRow: 1,
+                    gridColumn: `${span.start} / ${span.end}`,
+                    fontSize: '9px',
+                    color: '#999',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    textAlign: 'center',
+                    padding: '3px 4px',
+                    lineHeight: 1,
+                    borderBottom: '1px solid #e0e0e0',
+                    ...(gi > 0 ? { borderLeft: '1px solid #d0d0d0' } : {}),
+                  }}
+                >
+                  {span.label}
+                </div>
+              ))}
 
-            {/* Row 2: entry buttons */}
-            {intent.entries.map((entry, index) => (
-              <button
-                key={entry.id}
-                onClick={(e) => handleSelectEntry(e, entry.id)}
+              {/* Row 2: entry buttons */}
+              {intent.entries.map((entry, index) => (
+                <button
+                  key={entry.id}
+                  onClick={(e) => handleSelectEntry(e, entry.id)}
+                  style={{
+                    gridRow: 2,
+                    gridColumn: layout.entryColumns[index],
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '10px 12px',
+                    border: 'none',
+                    background: 'none',
+                    cursor: 'pointer',
+                    color: '#333',
+                    gap: '4px',
+                    transition: 'background-color 0.15s',
+                    minWidth: '56px',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f0f7ff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                  title={entry.label}
+                >
+                  <entry.Icon />
+                  <span style={{ fontSize: '10px' }}>{entry.label}</span>
+                </button>
+              ))}
+
+              {/* Separator columns (row 2) */}
+              {layout.separators.map((sep) => (
+                <div
+                  key={`sep-${sep.column}`}
+                  style={{
+                    gridRow: 2,
+                    gridColumn: sep.column,
+                    backgroundColor: sep.type === 'group-sep' ? '#d0d0d0' : '#e0e0e0',
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Physics properties row */}
+            {physicsState && (
+              <div
                 style={{
-                  gridRow: 2,
-                  gridColumn: layout.entryColumns[index],
                   display: 'flex',
-                  flexDirection: 'column',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '10px 12px',
-                  border: 'none',
-                  background: 'none',
-                  cursor: 'pointer',
-                  color: '#333',
-                  gap: '4px',
-                  transition: 'background-color 0.15s',
-                  minWidth: '56px',
+                  gap: '8px',
+                  padding: '6px 10px',
+                  borderTop: '1px solid #e0e0e0',
+                  fontSize: '11px',
+                  color: '#666',
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f0f7ff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }}
-                title={entry.label}
               >
-                <entry.Icon />
-                <span style={{ fontSize: '10px' }}>{entry.label}</span>
-              </button>
-            ))}
-
-            {/* Separator columns (row 2) */}
-            {layout.separators.map((sep) => (
-              <div
-                key={`sep-${sep.column}`}
-                style={{
-                  gridRow: 2,
-                  gridColumn: sep.column,
-                  backgroundColor: sep.type === 'group-sep' ? '#d0d0d0' : '#e0e0e0',
-                }}
-              />
-            ))}
+                <span style={{ whiteSpace: 'nowrap' }}>Mass:</span>
+                <input
+                  type="text"
+                  value={massInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMassInput(val);
+                    const num = parseFloat(val);
+                    if (!isNaN(num) && num > 0 && onSetMass) {
+                      onSetMass(num);
+                    }
+                  }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  style={{
+                    width: '48px',
+                    padding: '2px 6px',
+                    fontSize: '11px',
+                    border: '1px solid #d0d0d0',
+                    borderRadius: '3px',
+                    textAlign: 'center',
+                    outline: 'none',
+                    backgroundColor: physicsState.pinned ? '#f0f0f0' : 'white',
+                    color: physicsState.pinned ? '#999' : '#333',
+                  }}
+                  disabled={physicsState.pinned}
+                />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onTogglePinned) {
+                      onTogglePinned();
+                      if (!physicsState.pinned) {
+                        setMassInput('\u221E');
+                      } else {
+                        setMassInput(String(physicsState.mass));
+                      }
+                    }
+                  }}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    border: '1px solid',
+                    borderColor: physicsState.pinned ? '#007aff' : '#d0d0d0',
+                    borderRadius: '3px',
+                    background: physicsState.pinned ? '#007aff' : 'none',
+                    color: physicsState.pinned ? 'white' : '#666',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s',
+                  }}
+                  title={physicsState.pinned ? 'Unpin (allow forces)' : 'Pin (infinite mass, immune to forces)'}
+                >
+                  {physicsState.pinned ? 'Pinned \u221E' : 'Pin'}
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onToggleCollidable) onToggleCollidable();
+                  }}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    border: '1px solid',
+                    borderColor: physicsState.collidable ? '#007aff' : '#d0d0d0',
+                    borderRadius: '3px',
+                    background: physicsState.collidable ? '#007aff' : 'none',
+                    color: physicsState.collidable ? 'white' : '#666',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s',
+                  }}
+                  title={physicsState.collidable ? 'Disable collision' : 'Enable collision with other elements'}
+                >
+                  {physicsState.collidable ? 'Collidable' : 'Collide'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Divider between buttons and text input */}

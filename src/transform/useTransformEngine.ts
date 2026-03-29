@@ -4,13 +4,13 @@
 // each frame to move elements continuously.
 //
 // Forces are applied as instantaneous impulses: dv = force / mass.
-// Currently mass = 1 for all elements, so force directly changes velocity.
-// To add mass later: store mass per body and divide here.
+// Physics properties (mass, pinned, collidable) are stored separately from
+// transient state so they persist across rewind.
 //
 // Tracks total displacement per element so rewind can restore original positions.
 // All per-frame updates are batched into a single callback to avoid stale state.
 
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import type { Vector2 } from './TransformOperation';
 import { vec2Add, vec2Scale, ZERO_VECTOR } from './TransformOperation';
 
@@ -18,7 +18,15 @@ interface PhysicsBody {
   velocity: Vector2;
   /** Cumulative displacement since this body was created */
   totalDisplacement: Vector2;
-  // Future: mass, acceleration, friction, etc.
+}
+
+/** Persistent physics properties for an element. Survives rewind. */
+export interface PhysicsProperties {
+  mass: number;
+  /** If true, forces have no effect — element is immovable. */
+  pinned: boolean;
+  /** If true, this element participates in collision detection. */
+  collidable: boolean;
 }
 
 interface UseTransformEngineOptions {
@@ -26,10 +34,21 @@ interface UseTransformEngineOptions {
   onBatchTranslate: (displacements: Map<string, Vector2>) => void;
 }
 
-const DEFAULT_MASS = 1;
+export const DEFAULT_MASS = 1;
+
+const DEFAULT_PROPERTIES: PhysicsProperties = {
+  mass: DEFAULT_MASS,
+  pinned: false,
+  collidable: false,
+};
 
 export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptions) {
   const bodiesRef = useRef<Map<string, PhysicsBody>>(new Map());
+  /** Per-element physics properties — persist across rewind. */
+  const propsRef = useRef<Map<string, PhysicsProperties>>(new Map());
+  /** Bumped when physics properties change, so React consumers re-render. */
+  const [propsVersion, setPropsVersion] = useState(0);
+  const bumpVersion = () => setPropsVersion(v => v + 1);
   const rafIdRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const onBatchTranslateRef = useRef(onBatchTranslate);
@@ -37,6 +56,19 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
   useEffect(() => {
     onBatchTranslateRef.current = onBatchTranslate;
   }, [onBatchTranslate]);
+
+  const getProps = (elementId: string): PhysicsProperties => {
+    return propsRef.current.get(elementId) ?? DEFAULT_PROPERTIES;
+  };
+
+  const ensureProps = (elementId: string): PhysicsProperties => {
+    let p = propsRef.current.get(elementId);
+    if (!p) {
+      p = { ...DEFAULT_PROPERTIES };
+      propsRef.current.set(elementId, p);
+    }
+    return p;
+  };
 
   const scheduleLoop = useCallback(() => {
     if (rafIdRef.current !== null) return;
@@ -76,12 +108,16 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
 
   /**
    * Apply a force vector to an element as an instantaneous impulse.
-   * With mass=1, this directly adds to velocity: dv = force / mass.
+   * dv = force / mass. Heavier elements accelerate less.
+   * Pinned elements ignore forces entirely.
    */
   const applyForce = useCallback((elementId: string, force: Vector2) => {
+    const props = getProps(elementId);
+    if (props.pinned) return;
+
     const bodies = bodiesRef.current;
     const body = bodies.get(elementId);
-    const dv = vec2Scale(force, 1 / DEFAULT_MASS);
+    const dv = vec2Scale(force, 1 / props.mass);
 
     if (body) {
       body.velocity = vec2Add(body.velocity, dv);
@@ -94,19 +130,65 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
     scheduleLoop();
   }, [scheduleLoop]);
 
-  /** Stop all velocity on an element. */
+  /** Set mass for an element. Persists across rewind. */
+  const setMass = useCallback((elementId: string, mass: number) => {
+    if (mass <= 0) return;
+    const p = ensureProps(elementId);
+    p.mass = mass;
+    bumpVersion();
+  }, []);
+
+  /** Get mass for an element. Returns DEFAULT_MASS if not set. */
+  const getMass = useCallback((elementId: string): number => {
+    return getProps(elementId).mass;
+  }, []);
+
+  /** Pin an element (infinite mass — immune to forces). */
+  const setPinned = useCallback((elementId: string, pinned: boolean) => {
+    const p = ensureProps(elementId);
+    p.pinned = pinned;
+    if (pinned) {
+      bodiesRef.current.delete(elementId);
+    }
+    bumpVersion();
+  }, []);
+
+  /** Check if an element is pinned. */
+  const isPinned = useCallback((elementId: string): boolean => {
+    return getProps(elementId).pinned;
+  }, []);
+
+  /** Set whether an element participates in collision detection. */
+  const setCollidable = useCallback((elementId: string, collidable: boolean) => {
+    const p = ensureProps(elementId);
+    p.collidable = collidable;
+    bumpVersion();
+  }, []);
+
+  /** Check if an element is collidable. */
+  const isCollidable = useCallback((elementId: string): boolean => {
+    return getProps(elementId).collidable;
+  }, []);
+
+  /** Get all physics properties for an element. */
+  const getPhysicsProperties = useCallback((elementId: string): PhysicsProperties => {
+    return { ...getProps(elementId) };
+  }, [propsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Stop all velocity on an element. Properties are preserved. */
   const stopElement = useCallback((elementId: string) => {
     bodiesRef.current.delete(elementId);
   }, []);
 
-  /** Stop all physics bodies. */
+  /** Stop all physics bodies. Properties are preserved. */
   const stopAll = useCallback(() => {
     bodiesRef.current.clear();
   }, []);
 
   /**
    * Rewind all elements to their original positions by applying the
-   * negative of their accumulated displacement, then clear all bodies.
+   * negative of their accumulated displacement, then clear bodies.
+   * Physics properties (mass, pinned, collidable) are preserved.
    */
   const rewind = useCallback(() => {
     const bodies = bodiesRef.current;
@@ -135,5 +217,13 @@ export function useTransformEngine({ onBatchTranslate }: UseTransformEngineOptio
     return bodiesRef.current.size > 0;
   }, []);
 
-  return { applyForce, stopElement, stopAll, rewind, getVelocity, hasActiveBodies };
+  return {
+    applyForce,
+    setMass, getMass,
+    setPinned, isPinned,
+    setCollidable, isCollidable,
+    getPhysicsProperties,
+    stopElement, stopAll, rewind,
+    getVelocity, hasActiveBodies,
+  };
 }

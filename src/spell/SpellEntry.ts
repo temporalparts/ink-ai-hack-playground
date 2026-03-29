@@ -10,8 +10,8 @@ export interface SpellEntry {
   label: string;
   Icon: ComponentType;
   category: SpellCategory;
-  /** If set, clicking this entry applies a force vector to the target element. */
-  force?: Vector2;
+  /** If set, clicking this entry adds velocity directly (bypasses mass). */
+  velocity?: Vector2;
 }
 
 export const SPELL_CATEGORIES: { key: SpellCategory; label: string; order: number }[] = [

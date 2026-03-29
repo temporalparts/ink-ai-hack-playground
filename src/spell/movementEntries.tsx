@@ -1,7 +1,7 @@
 // Built-in movement direction entries for the spell menu.
 
 import type { SpellEntry } from './SpellEntry';
-import { MOVE_FORCE } from '../transform/TransformOperation';
+import { MOVE_FORCE as MOVE_SPEED } from '../transform/TransformOperation';
 
 function ArrowUp() {
   return (
