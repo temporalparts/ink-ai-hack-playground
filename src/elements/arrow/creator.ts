@@ -9,7 +9,6 @@ import type { ArrowElement } from './types';
 const MIN_ARROW_LENGTH = 50;
 const MAX_ARROW_LENGTH = 2000;
 const MIN_POINTS = 5;
-const MAX_STROKES = 1;
 
 // Look at last 20% of points for arrowhead divergence
 const ARROWHEAD_PORTION = 0.20;
@@ -79,32 +78,29 @@ function linearityScore(points: Offset[]): number {
   return Math.max(0, 1 - maxDeviation / totalLen);
 }
 
-function classifyDirection8(angle: number): string {
-  const tau = 2 * Math.PI;
-  const normalized = ((angle % tau) + tau) % tau;
-  const eighth = Math.PI / 8;
-  const labels = ['right', 'down-right', 'down', 'down-left', 'left', 'up-left', 'up', 'up-right'];
-  const index = Math.floor((normalized + eighth) % tau / (Math.PI / 4));
-  return labels[index % 8];
-}
 
-export function canCreate(strokes: Stroke[]): boolean {
-  if (strokes.length !== MAX_STROKES) return false;
-  const inputs = strokes[0].inputs.inputs;
-  if (inputs.length < MIN_POINTS) return false;
+function candidateStroke(strokes: Stroke[]): Stroke | null {
+  // Use the most recent stroke — arrow is always a single stroke
+  const stroke = strokes[strokes.length - 1];
+  if (!stroke) return null;
+  const inputs = stroke.inputs.inputs;
+  if (inputs.length < MIN_POINTS) return null;
   const first = inputs[0];
   const last = inputs[inputs.length - 1];
   const length = dist({ x: first.x, y: first.y }, { x: last.x, y: last.y });
-  return length >= MIN_ARROW_LENGTH && length <= MAX_ARROW_LENGTH;
+  return length >= MIN_ARROW_LENGTH && length <= MAX_ARROW_LENGTH ? stroke : null;
+}
+
+export function canCreate(strokes: Stroke[]): boolean {
+  return candidateStroke(strokes) !== null;
 }
 
 export async function createFromInk(
   strokes: Stroke[],
   _context: CreationContext,
 ): Promise<CreationResult | null> {
-  if (!canCreate(strokes)) return null;
-
-  const stroke = strokes[0];
+  const stroke = candidateStroke(strokes);
+  if (!stroke) return null;
   const inputs = stroke.inputs.inputs;
   const points: Offset[] = inputs.map(i => ({ x: i.x, y: i.y }));
 
@@ -122,9 +118,9 @@ export async function createFromInk(
     linearity: linearity.toFixed(2),
   });
 
-  // Require either a visible arrowhead OR a fairly straight stroke
-  if (arrowConf < 0.1 && linearity < 0.6) {
-    debugLog.info('[Arrow] REJECTED - no arrowhead and not straight enough');
+  // Require a visible arrowhead — a straight line without one is not an arrow
+  if (arrowConf < 0.15) {
+    debugLog.info('[Arrow] REJECTED - no arrowhead detected');
     return null;
   }
 
@@ -146,7 +142,9 @@ export async function createFromInk(
   const angleRadians = Math.atan2(dy, dx);
   const angleDegrees = angleRadians * (180 / Math.PI);
   const speed = Math.max(0, Math.min(1, (length - MIN_ARROW_LENGTH) / (MAX_ARROW_LENGTH - MIN_ARROW_LENGTH)));
-  const direction = classifyDirection8(angleRadians);
+  const direction = { x: Math.cos(angleRadians), y: Math.sin(angleRadians) };
+
+  debugLog.action(`Arrow: length=${length.toFixed(0)} direction=(${direction.x.toFixed(2)},${direction.y.toFixed(2)}) speed=${speed.toFixed(2)}`);
 
   const element: ArrowElement = {
     type: 'arrow',
@@ -166,7 +164,7 @@ export async function createFromInk(
 
   return {
     elements: [element],
-    consumedStrokes: strokes,
+    consumedStrokes: [stroke],  // only consume the arrow stroke, not other strokes in the batch
     confidence,
   };
 }
