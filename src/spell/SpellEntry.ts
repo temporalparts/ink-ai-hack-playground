@@ -1,6 +1,7 @@
 // Spell entry types and built-in entries (e.g. movement directions).
 
 import type { ComponentType } from 'react';
+import type { Vector2 } from '../transform/TransformOperation';
 
 export type SpellCategory = 'image' | 'content' | 'movement';
 
@@ -9,8 +10,8 @@ export interface SpellEntry {
   label: string;
   Icon: ComponentType;
   category: SpellCategory;
-  /** If set, clicking this entry adds continuous velocity (px/s) to the target element. */
-  velocityImpulse?: { vx: number; vy: number };
+  /** If set, clicking this entry applies a force vector to the target element. */
+  force?: Vector2;
 }
 
 export const SPELL_CATEGORIES: { key: SpellCategory; label: string; order: number }[] = [

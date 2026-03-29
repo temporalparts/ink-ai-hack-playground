@@ -1,7 +1,7 @@
 // Built-in movement direction entries for the spell menu.
 
 import type { SpellEntry } from './SpellEntry';
-import { MOVE_SPEED } from '../transform/TransformOperation';
+import { MOVE_FORCE } from '../transform/TransformOperation';
 
 function ArrowUp() {
   return (
@@ -41,11 +41,11 @@ function ArrowRight() {
 
 export const movementEntries: SpellEntry[] = [
   { id: 'move-up', label: 'Up', Icon: ArrowUp, category: 'movement',
-    velocityImpulse: { vx: 0, vy: -MOVE_SPEED } },
+    force: { x: 0, y: -MOVE_FORCE } },
   { id: 'move-down', label: 'Down', Icon: ArrowDown, category: 'movement',
-    velocityImpulse: { vx: 0, vy: MOVE_SPEED } },
+    force: { x: 0, y: MOVE_FORCE } },
   { id: 'move-left', label: 'Left', Icon: ArrowLeft, category: 'movement',
-    velocityImpulse: { vx: -MOVE_SPEED, vy: 0 } },
+    force: { x: -MOVE_FORCE, y: 0 } },
   { id: 'move-right', label: 'Right', Icon: ArrowRight, category: 'movement',
-    velocityImpulse: { vx: MOVE_SPEED, vy: 0 } },
+    force: { x: MOVE_FORCE, y: 0 } },
 ];

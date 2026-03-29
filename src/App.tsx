@@ -39,6 +39,7 @@ import type { SpellIntent, SpellAction } from './spell';
 import { getElementBounds } from './elements/rendering/ElementRenderer';
 import { Toaster } from './toast/Toast';
 import { useTransformEngine, translateElement } from './transform';
+import type { Vector2 } from './transform';
 import './App.css';
 
 
@@ -109,14 +110,13 @@ function App() {
   currentNoteRef.current = currentNote;
 
   // Physics-based transform engine for continuous element movement
-  const { addVelocity } = useTransformEngine({
-    onUpdate: useCallback((elementIds: string[], _type: string, dx: number, dy: number) => {
+  const { applyForce } = useTransformEngine({
+    onTranslate: useCallback((elementId: string, displacement: Vector2) => {
       const note = currentNoteRef.current;
-      const idSet = new Set(elementIds);
       setCurrentNote({
         ...note,
         elements: note.elements.map(el =>
-          idSet.has(el.id) ? translateElement(el, dx, dy) : el
+          el.id === elementId ? translateElement(el, displacement) : el
         ),
       });
     }, [setCurrentNote]),
@@ -994,9 +994,9 @@ function App() {
 
       debugLog.info('Spell: selected entry', { entryId: value, label: entry.label });
 
-      // Velocity entries (e.g. movement) — add continuous velocity and keep menu open
-      if (entry.velocityImpulse) {
-        addVelocity(spellIntent.replacingElementId, entry.velocityImpulse.vx, entry.velocityImpulse.vy);
+      // Force entries (e.g. movement) — apply force as impulse and keep menu open
+      if (entry.force) {
+        applyForce(spellIntent.replacingElementId, entry.force);
         return; // Don't dismiss spell menu
       }
 
@@ -1029,7 +1029,7 @@ function App() {
     }
 
     setSpellIntent(null);
-  }, [spellIntent, setCurrentNote, startElementAnimation, addVelocity]);
+  }, [spellIntent, setCurrentNote, startElementAnimation, applyForce]);
 
   // Handle palette action (user selected an entry or dismissed)
   // Uses currentNoteRef to avoid stale closure when onSelect awaits (e.g. file picker)

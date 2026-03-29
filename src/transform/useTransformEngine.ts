@@ -1,23 +1,36 @@
 // React hook for a physics-based transform engine.
-// Elements can have continuous velocities applied via requestAnimationFrame.
+//
+// Each element can have a velocity vector. A rAF loop applies velocity * dt
+// each frame to move elements continuously.
+//
+// Forces are applied as instantaneous impulses: dv = force / mass.
+// Currently mass = 1 for all elements, so force directly changes velocity.
+// To add mass later: store mass per body and divide here.
 
 import { useRef, useCallback, useEffect } from 'react';
-import type { Velocity } from './TransformOperation';
+import type { Vector2 } from './TransformOperation';
+import { vec2Add, vec2Scale, ZERO_VECTOR } from './TransformOperation';
 
-interface UseTransformEngineOptions {
-  onUpdate: (elementIds: string[], type: string, dx: number, dy: number) => void;
+interface PhysicsBody {
+  velocity: Vector2;
+  // Future: mass, acceleration, friction, etc.
 }
 
-export function useTransformEngine({ onUpdate }: UseTransformEngineOptions) {
-  // Element ID → current velocity (px/s)
-  const velocitiesRef = useRef<Map<string, Velocity>>(new Map());
+interface UseTransformEngineOptions {
+  onTranslate: (elementId: string, displacement: Vector2) => void;
+}
+
+const DEFAULT_MASS = 1;
+
+export function useTransformEngine({ onTranslate }: UseTransformEngineOptions) {
+  const bodiesRef = useRef<Map<string, PhysicsBody>>(new Map());
   const rafIdRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
-  const onUpdateRef = useRef(onUpdate);
+  const onTranslateRef = useRef(onTranslate);
 
   useEffect(() => {
-    onUpdateRef.current = onUpdate;
-  }, [onUpdate]);
+    onTranslateRef.current = onTranslate;
+  }, [onTranslate]);
 
   const scheduleLoop = useCallback(() => {
     if (rafIdRef.current !== null) return;
@@ -25,21 +38,20 @@ export function useTransformEngine({ onUpdate }: UseTransformEngineOptions) {
 
     const tick = (now: number) => {
       const dt = lastTimeRef.current !== null
-        ? (now - lastTimeRef.current) / 1000 // seconds
-        : 0; // first frame, no movement
+        ? (now - lastTimeRef.current) / 1000
+        : 0;
       lastTimeRef.current = now;
 
-      const velocities = velocitiesRef.current;
+      const bodies = bodiesRef.current;
 
-      for (const [elementId, vel] of velocities) {
-        const dx = vel.vx * dt;
-        const dy = vel.vy * dt;
-        if (dx !== 0 || dy !== 0) {
-          onUpdateRef.current([elementId], 'translate', dx, dy);
+      for (const [elementId, body] of bodies) {
+        const displacement = vec2Scale(body.velocity, dt);
+        if (displacement.x !== 0 || displacement.y !== 0) {
+          onTranslateRef.current(elementId, displacement);
         }
       }
 
-      if (velocities.size > 0) {
+      if (bodies.size > 0) {
         rafIdRef.current = requestAnimationFrame(tick);
       } else {
         rafIdRef.current = null;
@@ -50,35 +62,37 @@ export function useTransformEngine({ onUpdate }: UseTransformEngineOptions) {
     rafIdRef.current = requestAnimationFrame(tick);
   }, []);
 
-  /** Add velocity to an element. Accumulates with existing velocity. */
-  const addVelocity = useCallback((elementId: string, dvx: number, dvy: number) => {
-    const velocities = velocitiesRef.current;
-    const existing = velocities.get(elementId);
-    if (existing) {
-      existing.vx += dvx;
-      existing.vy += dvy;
+  /**
+   * Apply a force vector to an element as an instantaneous impulse.
+   * With mass=1, this directly adds to velocity: dv = force / mass.
+   */
+  const applyForce = useCallback((elementId: string, force: Vector2) => {
+    const bodies = bodiesRef.current;
+    const body = bodies.get(elementId);
+    const dv = vec2Scale(force, 1 / DEFAULT_MASS);
+
+    if (body) {
+      body.velocity = vec2Add(body.velocity, dv);
     } else {
-      velocities.set(elementId, { vx: dvx, vy: dvy });
+      bodies.set(elementId, { velocity: { ...dv } });
     }
     scheduleLoop();
   }, [scheduleLoop]);
 
   /** Stop all velocity on an element. */
   const stopElement = useCallback((elementId: string) => {
-    velocitiesRef.current.delete(elementId);
-    // Loop will self-terminate when map is empty
+    bodiesRef.current.delete(elementId);
   }, []);
 
-  /** Stop all velocities. */
+  /** Stop all physics bodies. */
   const stopAll = useCallback(() => {
-    velocitiesRef.current.clear();
-    // Loop will self-terminate on next frame
+    bodiesRef.current.clear();
   }, []);
 
-  /** Check if any element has velocity. */
-  const hasActiveVelocities = useCallback(() => {
-    return velocitiesRef.current.size > 0;
+  /** Get current velocity of an element (or zero). */
+  const getVelocity = useCallback((elementId: string): Vector2 => {
+    return bodiesRef.current.get(elementId)?.velocity ?? ZERO_VECTOR;
   }, []);
 
-  return { addVelocity, stopElement, stopAll, hasActiveVelocities };
+  return { applyForce, stopElement, stopAll, getVelocity };
 }

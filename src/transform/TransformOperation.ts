@@ -1,44 +1,31 @@
 // Transform operation descriptors and physics types
 
-export type TransformType = 'translate' | 'rotate' | 'scale';
+// --- Vector2: the core type for forces, velocities, positions ---
 
-export interface TranslateParams {
-  dx: number;
-  dy: number;
+export interface Vector2 {
+  x: number;
+  y: number;
 }
 
-export type TransformParams = TranslateParams; // union with RotateParams, ScaleParams later
+export const ZERO_VECTOR: Vector2 = { x: 0, y: 0 };
 
-export interface TransformOperation {
-  id: string;
-  elementIds: string[];
-  type: TransformType;
-  params: TransformParams;
-  durationMs: number;
-  easing: (t: number) => number;
+export function vec2(x: number, y: number): Vector2 {
+  return { x, y };
 }
 
-/** Velocity added per click of a movement button, in pixels/second */
-export const MOVE_SPEED = 100;
-
-export interface Velocity {
-  vx: number;
-  vy: number;
+export function vec2Add(a: Vector2, b: Vector2): Vector2 {
+  return { x: a.x + b.x, y: a.y + b.y };
 }
 
-let nextOpId = 0;
-
-export function createTranslateOperation(
-  elementIds: string[],
-  dx: number,
-  dy: number,
-): TransformOperation {
-  return {
-    id: `transform-${nextOpId++}`,
-    elementIds,
-    type: 'translate',
-    params: { dx, dy },
-    durationMs: 200,
-    easing: (t: number) => 1 - Math.pow(1 - t, 3),
-  };
+export function vec2Scale(v: Vector2, s: number): Vector2 {
+  return { x: v.x * s, y: v.y * s };
 }
+
+export function vec2Magnitude(v: Vector2): number {
+  return Math.sqrt(v.x * v.x + v.y * v.y);
+}
+
+// --- Physics constants ---
+
+/** Force magnitude applied per click of a movement button (px/s with mass=1) */
+export const MOVE_FORCE = 100;
