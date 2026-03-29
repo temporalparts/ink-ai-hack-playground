@@ -108,8 +108,8 @@ function App() {
   const currentNoteRef = useRef(currentNote);
   currentNoteRef.current = currentNote;
 
-  // Transform engine for animated element manipulation (movement, rotation, etc.)
-  const { submitOperation } = useTransformEngine({
+  // Physics-based transform engine for continuous element movement
+  const { addVelocity } = useTransformEngine({
     onUpdate: useCallback((elementIds: string[], _type: string, dx: number, dy: number) => {
       const note = currentNoteRef.current;
       const idSet = new Set(elementIds);
@@ -994,10 +994,9 @@ function App() {
 
       debugLog.info('Spell: selected entry', { entryId: value, label: entry.label });
 
-      // Transform entries (e.g. movement) — apply transform and keep menu open
-      if (entry.transformFactory) {
-        const op = entry.transformFactory(spellIntent.replacingElementId);
-        submitOperation(op);
+      // Velocity entries (e.g. movement) — add continuous velocity and keep menu open
+      if (entry.velocityImpulse) {
+        addVelocity(spellIntent.replacingElementId, entry.velocityImpulse.vx, entry.velocityImpulse.vy);
         return; // Don't dismiss spell menu
       }
 
@@ -1030,7 +1029,7 @@ function App() {
     }
 
     setSpellIntent(null);
-  }, [spellIntent, setCurrentNote, startElementAnimation, submitOperation]);
+  }, [spellIntent, setCurrentNote, startElementAnimation, addVelocity]);
 
   // Handle palette action (user selected an entry or dismissed)
   // Uses currentNoteRef to avoid stale closure when onSelect awaits (e.g. file picker)
