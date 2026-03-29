@@ -125,6 +125,9 @@ function App() {
       const el = currentNoteRef.current.elements.find(e => e.id === elementId);
       return el ? getElementBounds(el) : null;
     }, []),
+    getElement: useCallback((elementId: string) => {
+      return currentNoteRef.current.elements.find(e => e.id === elementId) ?? null;
+    }, []),
   });
 
   // Load saved physics properties on mount
