@@ -25,6 +25,12 @@ interface PhysicsBody {
   totalDisplacement: Vector2;
 }
 
+/** Snapshot of an element's origin position for rewind. */
+interface OriginSnapshot {
+  /** Bounds center at the time the element entered physics. */
+  center: Vector2;
+}
+
 /** Persistent physics properties for an element. Survives rewind. */
 export interface PhysicsProperties {
   mass: number;
@@ -64,6 +70,8 @@ export function useTransformEngine({ onBatchTranslate, getBounds, getElement }: 
   const getBoundsRef = useRef(getBounds);
   const getElementRef = useRef(getElement);
   const shapeCacheRef = useRef(new CollisionShapeCache());
+  /** Origin positions for rewind — snapshotted when an element first enters physics. */
+  const originsRef = useRef<Map<string, OriginSnapshot>>(new Map());
 
   useEffect(() => {
     onBatchTranslateRef.current = onBatchTranslate;
@@ -88,6 +96,17 @@ export function useTransformEngine({ onBatchTranslate, getBounds, getElement }: 
       propsRef.current.set(elementId, p);
     }
     return p;
+  };
+
+  /** Snapshot the element's current bounds center as its origin, if not already stored. */
+  const snapshotOrigin = (elementId: string) => {
+    if (originsRef.current.has(elementId)) return;
+    const bounds = getBoundsRef.current?.(elementId);
+    if (bounds) {
+      originsRef.current.set(elementId, {
+        center: { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 },
+      });
+    }
   };
 
   const scheduleLoop = useCallback(() => {
@@ -158,11 +177,13 @@ export function useTransformEngine({ onBatchTranslate, getBounds, getElement }: 
             // Ensure bodies exist for stationary collidable elements
             let bodyA = bodies.get(idA);
             if (!bodyA) {
+              snapshotOrigin(idA);
               bodyA = { velocity: { ...ZERO_VECTOR }, totalDisplacement: { ...ZERO_VECTOR } };
               bodies.set(idA, bodyA);
             }
             let bodyB = bodies.get(idB);
             if (!bodyB) {
+              snapshotOrigin(idB);
               bodyB = { velocity: { ...ZERO_VECTOR }, totalDisplacement: { ...ZERO_VECTOR } };
               bodies.set(idB, bodyB);
             }
@@ -265,6 +286,7 @@ export function useTransformEngine({ onBatchTranslate, getBounds, getElement }: 
     if (body) {
       body.velocity = vec2Add(body.velocity, dv);
     } else {
+      snapshotOrigin(elementId);
       bodies.set(elementId, {
         velocity: { ...dv },
         totalDisplacement: { ...ZERO_VECTOR },
@@ -284,6 +306,7 @@ export function useTransformEngine({ onBatchTranslate, getBounds, getElement }: 
     if (body) {
       body.velocity = vec2Add(body.velocity, dv);
     } else {
+      snapshotOrigin(elementId);
       bodies.set(elementId, {
         velocity: { ...dv },
         totalDisplacement: { ...ZERO_VECTOR },
@@ -355,16 +378,29 @@ export function useTransformEngine({ onBatchTranslate, getBounds, getElement }: 
   }, []);
 
   /**
-   * Rewind all elements to their original positions by applying the
-   * negative of their accumulated displacement, then clear bodies.
+   * Rewind all elements to their original positions.
+   * Uses snapshotted origin positions for accuracy instead of accumulated
+   * displacement, which can drift due to collision separations.
    * Physics properties (mass, pinned, collidable) are preserved.
    */
   const rewind = useCallback(() => {
     const bodies = bodiesRef.current;
+    const origins = originsRef.current;
     const batch = new Map<string, Vector2>();
 
-    for (const [elementId, body] of bodies) {
-      const reversal = vec2Scale(body.totalDisplacement, -1);
+    for (const [elementId] of bodies) {
+      const origin = origins.get(elementId);
+      if (!origin) continue;
+      const currentBounds = getBoundsRef.current?.(elementId);
+      if (!currentBounds) continue;
+      const currentCenter: Vector2 = {
+        x: (currentBounds.left + currentBounds.right) / 2,
+        y: (currentBounds.top + currentBounds.bottom) / 2,
+      };
+      const reversal: Vector2 = {
+        x: origin.center.x - currentCenter.x,
+        y: origin.center.y - currentCenter.y,
+      };
       if (reversal.x !== 0 || reversal.y !== 0) {
         batch.set(elementId, reversal);
       }
@@ -374,6 +410,7 @@ export function useTransformEngine({ onBatchTranslate, getBounds, getElement }: 
       onBatchTranslateRef.current(batch);
     }
     bodies.clear();
+    origins.clear();
     shapeCacheRef.current.clear();
   }, []);
 
